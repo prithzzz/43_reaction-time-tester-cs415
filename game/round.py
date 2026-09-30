@@ -2,31 +2,52 @@ import random
 import pygame
 
 class Round:
-    def __init__(self, min_wait_ms=1000, max_wait_ms=3000):
-        self.wait_delay_ms = random.randint(min_wait_ms, max_wait_ms)
-        self.state = "waiting"  # "waiting" -> "go" -> "result"
-        self.start_time = pygame.time.get_ticks()
-        self.go_time = None
+    """One reaction round: WAITING (grey) -> GO (green) -> RESULT,
+    or WAITING -> FALSE_START if the player reacts too early."""
+
+    WAITING = "waiting"
+    GO = "go"
+    RESULT = "result"
+    FALSE_START = "false_start"
+
+    def __init__(self, min_wait_ms, max_wait_ms):
+        self.state = Round.WAITING
+        self.wait_ms = random.randint(min_wait_ms, max_wait_ms)
+        self.start_tick = pygame.time.get_ticks()
+        self.go_tick = None        # moment the screen turned green
+        self.end_tick = None       # moment the round finished
         self.reaction_ms = None
 
     def update(self):
-        if self.state == "waiting":
+        """Advance the round. Returns True on the frame it flips to GO."""
+        if self.state == Round.WAITING:
             now = pygame.time.get_ticks()
-            if now - self.start_time >= self.wait_delay_ms:
-                self.state = "go"
-                self.go_time = now
+            if now - self.start_tick >= self.wait_ms:
+                self.state = Round.GO
+                self.go_tick = now
+                return True
+        return False
 
-    def register_input(self):
-        # NOTE: this always measures elapsed time since the round
-        # STARTED (self.start_time), not since the screen actually
-        # turned green (self.go_time) - and it never checks self.state
-        # first. Two consequences: (1) a click during the grey
-        # "waiting" phase is timed and recorded exactly like a real
-        # reaction instead of being flagged as a false start, and (2)
-        # even a genuine reaction after "go" is inflated by however
-        # long the wait phase lasted, since the clock never resets
-        # when the screen turns green. See Task 1 in the README.
+    def react(self):
+        """Player clicked/pressed Space. Returns the new state, or None
+        if the input should be ignored (round already finished)."""
         now = pygame.time.get_ticks()
-        self.reaction_ms = now - self.start_time
-        self.state = "result"
-        return self.reaction_ms
+        if self.state == Round.WAITING:
+            self.state = Round.FALSE_START
+            self.end_tick = now
+            return Round.FALSE_START
+        if self.state == Round.GO:
+            self.reaction_ms = now - self.go_tick   # measured from "go"
+            self.state = Round.RESULT
+            self.end_tick = now
+            return Round.RESULT
+        return None
+
+    @property
+    def finished(self):
+        return self.state in (Round.RESULT, Round.FALSE_START)
+
+    def ms_since_end(self):
+        if self.end_tick is None:
+            return 0
+        return pygame.time.get_ticks() - self.end_tick
